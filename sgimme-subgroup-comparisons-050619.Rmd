@@ -1,0 +1,842 @@
+---
+title: "Subgroup Comparisons for 'Unsupervised Classification Reveals Degenerate Neural Representations of Emotion'"
+author: "Cameron Doyle & Stephanie Lane"
+date: "11/07/2018, adapted for OSF 05/06/19"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+    theme: lumen
+  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
+library(tidyverse)
+library(reshape2)
+library(knitr)
+library(kableExtra)
+library(effsize)
+library(lsr)
+library(pander)
+library(gimme)
+library(car)
+panderOptions("table.split.table", Inf) 
+```
+
+&nbsp;
+
+
+## Subgroup Level Search
+
+Comparison of subgroups discovered for Anger and Anxiety runs. Input = first principal component of 11 Shirer et al. 2012 networks of interest (excluding three primary sensory networks: auditory, high visual and primary visual)
+
+```{r comment=NA}
+selfdat <- read_csv("behavioral_data/self_report_clean.csv")
+
+rdeesdat <- read_csv("behavioral_data/rdees_data.csv")
+#select columns containing scores
+rdeesdat <- select(rdeesdat, 1, 16:19)
+
+tasdat <- read_csv("behavioral_data/tas20_data.csv")
+#select columns containing scores
+tasdat <- select(tasdat, 1, 22:25)
+
+rdees_tas <- inner_join(rdeesdat, tasdat, by = 'Subject')
+
+#read in VAS score data
+vasdat_all <- read_csv("behavioral_data/vas_scores.csv")
+#filter out everything but the Anger and Anxiety Runs
+target <- c('Anger', 'Anxiety')
+vasdat_anganx <- filter(vasdat_all, Run %in% target)
+
+#read in demographics dataset
+demog <- read_csv("behavioral_data/me_demographics.csv")
+
+#create a data frame of ME subject IDs in the correct order based on the readme.txt file in 'important docs' folder
+Subject = data.frame(Subject= c('ME012', 'ME014', 'ME016', 'ME017', 'ME018', 'ME019', 'ME020', 'ME021', 'ME022', 'ME023', 'ME024', 'ME026', 'ME027', 'ME030', 'ME031', 'ME032', 'ME033', 'ME034', 'ME035', 'ME036', 'ME037', 'ME038', 'ME039', 'ME040'))
+
+#join the two datasets so we only have the subjects we need for analysis and the Ang and Anx run data
+vasdat_anganx <- left_join(Subject, vasdat_anganx, by = "Subject")
+
+#convert VAS data to type numeric so we can work with them :)
+vasdat_anganx[,3:6] <- sapply(vasdat_anganx[,3:6], as.numeric)
+
+```
+
+<div style="margin-bottom:100px;">
+
+# Anger
+
+
+#### Subgroup 1 Plot
+```{r, out.width = "60%", fig.cap = " "}
+knitr::include_graphics("figures/plots/subgroup_1_plot_ang.png")
+```
+
+<div style="margin-bottom:100px;">
+
+#### Subgroup 2 Plot
+```{r, out.width = "60%", fig.cap = " "}
+knitr::include_graphics("figures/plots/subgroup_2_plot_ang.png")
+```
+
+<div style="margin-bottom:100px;">
+
+```{r comment = NA}
+#read in gimme output
+pang <- read_csv("pcs_anger_out/summaryFit.csv")
+#add ME subject IDs in the correct order based on the readme.txt file in 'important docs' folder
+pang$Subject <- c('ME012', 'ME014', 'ME016', 'ME017', 'ME018', 'ME019', 'ME020', 'ME021', 'ME022', 'ME023', 'ME024', 'ME026', 'ME027', 'ME030', 'ME031', 'ME032', 'ME033', 'ME034', 'ME035', 'ME036', 'ME037', 'ME038', 'ME039', 'ME040')
+#add a variable for the Run so we can join by subject and run
+pang$Run <- 'Anger'
+#merge datasets based on subject ID and Run type
+pang_vas <- inner_join(pang, vasdat_anganx, by = c('Subject', 'Run'))
+```
+
+
+```{r comment = NA}
+#join pang_vas with rdees and tas data. selfdat has to stay separate because we only have data from 20 subjects (for other measures we have data from 24 subjects)
+alldatang <- inner_join(pang_vas, rdees_tas, by = 'Subject')
+selfdatang <- inner_join(selfdat, alldatang, by = 'Subject')
+```
+
+<div style="margin-bottom:100px;">
+
+>Table of frequencies for each subgroup. Subgroups with N = 4 or greater will be characterized.
+
+```{r comment = NA, echo = FALSE, results = 'asis'}
+#create a table of frequencies for each subgroup. subgroups of N = 4 or greater will be characterized
+anggrps <- table((pang$sub_membership))
+anggrps <- as.data.frame(anggrps)
+anggrps <- rename(anggrps, Group = Var1, Frequency = Freq)
+
+kable(anggrps)  %>%
+  kable_styling(bootstrap_options = 'condensed', full_width = F, position = 'left')
+```
+
+
+```{r comment = NA}
+#select variables needed for group comparisons
+angdat <- alldatang %>% select(Subject, sub_membership, starts_with("Unpleasantness"), starts_with("Activation"), starts_with("Anxiety"), starts_with("Anger"), starts_with("rdees"), starts_with("tas"))
+
+
+
+angdatself <- selfdatang %>% select(Subject, sub_membership, starts_with("AngerRun"), -ends_with("dummy"))
+```
+
+
+<div style="margin-bottom:100px;">
+
+
+### Anger Subgroup Comparisons
+
+
+```{r}
+#reshape data so that every subgroup has a column for each variable
+anggrp <- melt(angdat, id.vars = c("Subject", "sub_membership"))
+anggrp <- dcast(anggrp, Subject ~ variable + sub_membership)
+
+anggrpself <- melt(angdatself, id.vars = c("Subject", "sub_membership"))
+anggrpself <- dcast(anggrpself, Subject ~ variable + sub_membership)
+```
+
+
+<div style="margin-bottom:100px;">
+
+#### VAS Scores
+
+```{r comment=NA}
+angdat_filt <- angdat %>% filter(sub_membership != 3)
+
+ pander(t.test(anggrp$Unpleasantness_1, anggrp$Unpleasantness_2))
+      cohen.d(angdat_filt$Unpleasantness ~ angdat_filt$sub_membership)
+ pander(t.test(anggrp$Activation_1, anggrp$Activation_2))
+      cohen.d(angdat_filt$Activation ~ angdat_filt$sub_membership)
+ pander(t.test(anggrp$Anxiety_1, anggrp$Anxiety_2))
+      cohen.d(angdat_filt$Anxiety ~ angdat_filt$sub_membership)
+ pander(t.test(anggrp$Anger_1, anggrp$Anger_2))
+      cohen.d(angdat_filt$Anger ~ angdat_filt$sub_membership)
+```
+
+><span style="color:darkcyan">Subgroup 1 experienced significantly more unpleasantness as compared to Subgroup 2 (p = .011).</span>
+
+><span style="color:darkcyan">The subgroups did not differ in degree of anger experienced during the anger run.</span>
+
+
+
+<div style="margin-bottom:100px;">
+
+#### RDEES Scores
+
+```{r comment=NA}
+ pander(t.test(anggrp$rdees_sum_1, anggrp$rdees_sum_2))
+      cohen.d(angdat_filt$rdees_sum ~ angdat_filt$sub_membership)
+ pander(t.test(anggrp$rdees_mean_1, anggrp$rdees_mean_2))
+      cohen.d(angdat_filt$rdees_mean ~ angdat_filt$sub_membership)
+ pander(t.test(anggrp$rdees_range_1, anggrp$rdees_range_2))
+      cohen.d(angdat_filt$rdees_range~ angdat_filt$sub_membership)
+ pander(t.test(anggrp$rdees_diff_1, anggrp$rdees_diff_2))
+      cohen.d(angdat_filt$rdees_diff ~ angdat_filt$sub_membership)
+```
+
+>No significant differences in RDEES scores between Subgroups 1 & 2.
+
+<div style="margin-bottom:100px;">
+
+#### TAS-20 Scores
+
+```{r comment=NA}
+ pander(t.test(anggrp$tas_score_1, anggrp$tas_score_2))
+       cohen.d(angdat_filt$tas_score ~ angdat_filt$sub_membership)
+ pander(t.test(anggrp$tas_describing_1, anggrp$tas_describing_2))
+       cohen.d(angdat_filt$tas_describing ~ angdat_filt$sub_membership)
+ pander(t.test(anggrp$tas_identifying_1, anggrp$tas_identifying_2))
+       cohen.d(angdat_filt$tas_identifying ~ angdat_filt$sub_membership)
+ pander(t.test(anggrp$tas_external_1, anggrp$tas_external_2))
+       cohen.d(angdat_filt$tas_external ~ angdat_filt$sub_membership)
+```
+
+><span style="color:darkcyan">Subgroup 1 had significantly higher overall TAS-20 scores (p = .025), as compared to subgroup 2. Subgroup 1 had significantly higher describing subscale scores (p = .004) and marginally higher identifying subscale scores (p = .075) as compared to Subgroup 2. Subgroups did not differ on external subscale scores.</span>
+
+<div style="margin-bottom:100px;">
+
+#### Coded Self Report Data
+ 
+```{r comment=NA, error = F}
+selfdatang_filt <- selfdatang %>% filter(sub_membership != 3)
+
+ pander(t.test(anggrpself$AngerRun_emotion_1, anggrpself$AngerRun_emotion_2))
+     cohen.d(selfdatang_filt$AngerRun_emotion ~ selfdatang_filt$sub_membership)
+ pander(t.test(anggrpself$AngerRun_valence_1, anggrpself$AngerRun_valence_2))
+     cohen.d(selfdatang_filt$AngerRun_valence ~ selfdatang_filt$sub_membership)
+ pander(t.test(anggrpself$AngerRun_arousal_1, anggrpself$AngerRun_arousal_2))
+     cohen.d(selfdatang_filt$AngerRun_arousal ~ selfdatang_filt$sub_membership)
+ pander(t.test(anggrpself$AngerRun_body_1, anggrpself$AngerRun_body_2))
+     cohen.d(selfdatang_filt$AngerRun_body ~ selfdatang_filt$sub_membership)
+ pander(t.test(anggrpself$AngerRun_internalexternal_1, anggrpself$AngerRun_internalexternal_2))
+     cohen.d(selfdatang_filt$AngerRun_internalexternal ~ selfdatang_filt$sub_membership)
+ pander(t.test(anggrpself$AngerRun_social_1, anggrpself$AngerRun_social_2))
+     cohen.d(selfdatang_filt$AngerRun_social ~ selfdatang_filt$sub_membership)
+ pander(t.test(anggrpself$AngerRun_memoryimagine_1, anggrpself$AngerRun_memoryimagine_2))
+     cohen.d(selfdatang_filt$AngerRun_memoryimagine ~ selfdatang_filt$sub_membership)
+```
+
+>No significant differences in Coded Self Report Data between Subgroups 1 & 2.
+
+<div style="margin-bottom:100px;">
+
+
+
+# Anxiety
+
+
+#### Subgroup 1 Plot
+```{r, out.width = "60%", fig.cap = " "}
+knitr::include_graphics("figures/plots/subgroup_1_plot_anx.png")
+```
+
+<div style="margin-bottom:100px;">
+
+#### Subgroup 2 Plot
+```{r, out.width = "60%", fig.cap = " "}
+knitr::include_graphics("figures/plots/subgroup_2_plot_anx.png")
+```
+
+<div style="margin-bottom:100px;">
+
+```{r comment=NA}
+#read in gimme output
+panx <- read_csv("pcs_anxiety_out/summaryFit.csv")
+#add ME subject IDs in the correct order based on the readme.txt file in important docs folder
+panx$Subject <- c('ME012', 'ME014', 'ME016', 'ME017', 'ME018', 'ME019', 'ME020', 'ME021', 'ME022', 'ME023', 'ME024', 'ME026', 'ME027', 'ME030', 'ME031', 'ME032', 'ME033', 'ME034', 'ME035', 'ME036', 'ME037', 'ME038', 'ME039', 'ME040')
+#add a variable for the Run so we can join by subject and run
+panx$Run <- 'Anxiety'
+#merge datasets based on subject ID
+panx_vas <- inner_join(panx, vasdat_anganx, by = c('Subject', 'Run'))
+```
+
+```{r comment=NA}
+#join panx_vas with rdees and tas data. selfdat has to stay separate because we only have data from 20 subjects (for other measures we have data from 24 subjects)
+alldatanx <- inner_join(panx_vas, rdees_tas, by = 'Subject')
+selfdatanx <- inner_join(selfdat, alldatanx, by = 'Subject')
+
+
+
+selfdatanx_no039 <- selfdatanx %>% filter(Subject != 'ME039')
+```
+
+
+<div style="margin-bottom:100px;">
+
+Table of frequencies for each subgroup.
+
+```{r comment=NA}
+#create a table of frequencies for each subgroup. subgroups of N = 4 or greater will be characterized
+anxgrps <- table((panx$sub_membership))
+anxgrps <- as.data.frame(anxgrps)
+anxgrps <- rename(anxgrps, Group = Var1, Frequency = Freq)
+
+kable(anxgrps)  %>%
+  kable_styling(bootstrap_options = 'condensed', full_width = F, position = 'left')
+```
+
+<div style="margin-bottom:100px;">
+
+
+```{r comment=NA}
+#select variables needed for group comparisons
+anxdat <- alldatanx %>% select(Subject, sub_membership, starts_with("Unpleasantness"), starts_with("Activation"), starts_with("Anxiety"), starts_with("Anger"), starts_with("rdees"), starts_with("tas"))
+
+anxdatself <- selfdatanx %>% select(Subject, sub_membership, starts_with("AnxietyRun"), -ends_with("dummy"))
+```
+
+<div style="margin-bottom:100px;">
+
+>The table below reveals that ME039 is an outlier on the VAS Anxiety Measure. We conducted a sensitivity analysis by removing that subject to see if the groups no longer differ in mean ratings of anxiety.
+
+
+
+```{r}
+anxdat_sub2 <- filter(anxdat, sub_membership == 2)
+
+kable(anxdat_sub2[, 1:6])
+
+#testing whether 039 is a true statistical outlier
+# hist(anxdat$Anxiety, breaks = 10)
+# boxplot(anxdat$Anxiety)
+# plot(anxdat$Anxiety, anxdat$Activation)
+# cor.test(anxdat$Anxiety, anxdat$Activation)
+# cor.test(anxdat_no039$Anxiety, anxdat_no039$Activation)
+# summary(anxdat$Anxiety)
+# 4.825 + 3*sd(anxdat$Anxiety)
+# 4.825 + 3*mad(anxdat$Anxiety)
+
+anxdat_no039 <- anxdat %>% filter(Subject != 'ME039')
+anxdatself_no039 <- anxdatself %>% filter(Subject != 'ME039')
+```
+
+
+
+<div style="margin-bottom:100px;">
+  
+
+### Anxiety Subgroup Comparisons
+
+```{r}
+#reshape data so that every subgroup has a column for each variable
+anxgrp <- melt(anxdat, id.vars = c("Subject", "sub_membership"))
+#create new dataset and run cook's d outlier analysis
+anxgrp_Anxiety <- anxgrp %>% filter(variable == 'Anxiety')
+plot(cooks.distance(lm(value~sub_membership, data = anxgrp_Anxiety)))
+fit <- lm(anxgrp_Anxiety$value~anxgrp_Anxiety$sub_membership)
+summary(fit)
+cook <- cooks.distance(fit) %>% format(scientific=F)
+
+anxgrp <- dcast(anxgrp, Subject ~ variable + sub_membership)
+
+#do it without the 039 outlier
+anxgrp_no039 <- melt(anxdat_no039, id.vars = c("Subject", "sub_membership"))
+anxgrp_no039 <- dcast(anxgrp_no039, Subject ~ variable + sub_membership)
+
+
+anxgrpself <- melt(anxdatself, id.vars = c("Subject", "sub_membership"))
+anxgrpself <- dcast(anxgrpself, Subject ~ variable + sub_membership)
+
+```
+
+
+<div style="margin-bottom:100px;">
+
+#### VAS Scores
+
+```{r comment=NA}
+ pander(t.test(anxgrp$Unpleasantness_1, anxgrp$Unpleasantness_2))
+    cohen.d(anxdat$Unpleasantness ~ anxdat$sub_membership)
+ pander(t.test(anxgrp$Activation_1, anxgrp$Activation_2))
+    cohen.d(anxdat$Activation ~ anxdat$sub_membership)
+ pander(t.test(anxgrp$Anxiety_1, anxgrp$Anxiety_2))
+    cohen.d(anxdat$Anxiety ~ anxdat$sub_membership)
+ pander(t.test(anxgrp$Anger_1, anxgrp$Anger_2))
+     cohen.d(anxdat$Anger ~ anxdat$sub_membership)
+```
+
+><span style="color:darkcyan">Subgroup 2 experienced significantly more anxiety during the anxiety run as compared to Subgroup 1 (p = .034).</span>
+
+<div style="margin-bottom:100px;">
+
+#### VAS Scores without 039 outlier
+
+```{r comment=NA}
+#without the 039 outlier
+ pander(t.test(anxgrp_no039$Unpleasantness_1, anxgrp_no039$Unpleasantness_2))
+    cohen.d(anxdat_no039$Unpleasantness ~ anxdat_no039$sub_membership)
+ pander(t.test(anxgrp_no039$Activation_1, anxgrp_no039$Activation_2))
+    cohen.d(anxdat_no039$Activation ~ anxdat_no039$sub_membership)
+ pander(t.test(anxgrp_no039$Anxiety_1, anxgrp_no039$Anxiety_2))
+    cohen.d(anxdat_no039$Anxiety ~ anxdat_no039$sub_membership)
+ pander(t.test(anxgrp_no039$Anger_1, anxgrp_no039$Anger_2))
+    cohen.d(anxdat_no039$Anger ~ anxdat_no039$sub_membership)
+```
+
+<div style="margin-bottom:100px;">
+
+#### RDEES Scores
+
+```{r comment=NA}
+ pander(t.test(anxgrp$rdees_sum_1, anxgrp$rdees_sum_2))
+    cohen.d(anxdat$rdees_sum ~ anxdat$sub_membership)
+ pander(t.test(anxgrp$rdees_mean_1, anxgrp$rdees_mean_2))
+    cohen.d(anxdat$rdees_mean ~ anxdat$sub_membership)
+ pander(t.test(anxgrp$rdees_range_1, anxgrp$rdees_range_2))
+    cohen.d(anxdat$rdees_range ~ anxdat$sub_membership)
+ pander(t.test(anxgrp$rdees_diff_1, anxgrp$rdees_diff_2))
+    cohen.d(anxdat$rdees_diff ~ anxdat$sub_membership)
+```
+
+>No significant differences in RDEES scores between Subgroups 1 & 2.
+
+<div style="margin-bottom:100px;">
+
+#### TAS-20 Scores
+
+```{r comment=NA}
+ pander(t.test(anxgrp$tas_score_1, anxgrp$tas_score_2))
+     cohen.d(anxdat$tas_score ~ anxdat$sub_membership)
+ pander(t.test(anxgrp$tas_describing_1, anxgrp$tas_describing_2))
+     cohen.d(anxdat$tas_describing ~ anxdat$sub_membership)
+ pander(t.test(anxgrp$tas_identifying_1, anxgrp$tas_identifying_2))
+     cohen.d(anxdat$tas_identifying ~ anxdat$sub_membership)
+ pander(t.test(anxgrp$tas_external_1, anxgrp$tas_external_2))
+     cohen.d(anxdat$tas_external ~ anxdat$sub_membership)
+```
+
+><span style="color:darkcyan">Subgroup 1 had significantly higher TAS-20 identifying subscale scores as compared to Subgroup 2 (p = .031) .</span>
+
+<div style="margin-bottom:100px;">
+
+
+#### Coded Self Report Data
+
+```{r comment=NA}
+ pander(t.test(anxgrpself$AnxietyRun_emotion_1, anxgrpself$AnxietyRun_emotion_2))
+         cohen.d(selfdatanx$AnxietyRun_emotion ~ selfdatanx$sub_membership)
+ pander(t.test(anxgrpself$AnxietyRun_valence_1, anxgrpself$AnxietyRun_valence_2))
+         cohen.d(selfdatanx$AnxietyRun_valence ~ selfdatanx$sub_membership)
+ pander(t.test(anxgrpself$AnxietyRun_arousal_1, anxgrpself$AnxietyRun_arousal_2))
+         cohen.d(selfdatanx$AnxietyRun_arousal ~ selfdatanx$sub_membership)
+ pander(t.test(anxgrpself$AnxietyRun_body_1, anxgrpself$AnxietyRun_body_2))
+         cohen.d(selfdatanx$AnxietyRun_body ~ selfdatanx$sub_membership)
+ pander(t.test(anxgrpself$AnxietyRun_internalexternal_1, anxgrpself$AnxietyRun_internalexternal_2))
+         cohen.d(selfdatanx$AnxietyRun_internalexternal ~ selfdatanx$sub_membership)
+ pander(t.test(anxgrpself$AnxietyRun_social_1, anxgrpself$AnxietyRun_social_2))
+         cohen.d(selfdatanx$AnxietyRun_social ~ selfdatanx$sub_membership)
+ pander(t.test(anxgrpself$AnxietyRun_memoryimagine_1, anxgrpself$AnxietyRun_memoryimagine_2))
+         cohen.d(selfdatanx$AnxietyRun_memoryimagine ~ selfdatanx$sub_membership)
+```
+
+><span style="color:darkcyan">Subgroup 2 focused marginally more on imagined scenarios as compared to Subgroup 1 (p = .080).</span>
+
+<div style="margin-bottom:100px;">
+
+
+##Subgroup Robustness
+
+<div style="margin-bottom:100px;">
+
+Table showing counts for the number of shared subgroups across runs (Ang_Anx = 1.2 indicates subjects who were in Anger Subgroup 1 and Anxiety Subgroup 2):
+
+```{r comment=NA}
+compdat <- inner_join(pang, panx, by = 'Subject')
+compdat <- compdat %>% select(Subject, sub_mem_ang = sub_membership.x, sub_mem_anx = sub_membership.y)
+
+compdat_grp <- compdat %>% group_by(sub_mem_ang, sub_mem_anx, add = T) %>% arrange(sub_mem_ang)
+compdat_grp$ang.anx <- with(compdat_grp, interaction(sub_mem_ang,  sub_mem_anx))
+
+comp <- table(compdat_grp$ang.anx)
+comp <- as.data.frame(comp)
+comp <- rename(comp, Ang_Anx = Var1, Frequency = Freq)
+
+kable(comp)  %>%
+  kable_styling(bootstrap_options = 'condensed', full_width = F, position = 'left')
+```
+
+<div style="margin-bottom:100px;">
+
+Visualization of subgroup membership across runs:
+
+```{r eval = F}
+#Table showing which participants were in each subgroup pair.
+compdat_grp <- compdat_grp %>% ungroup() %>% select (Subject, ang.anx) %>% 
+                               arrange(ang.anx) %>% rename( Ang_Anx = ang.anx)
+
+kable(compdat_grp)  %>%
+  kable_styling(bootstrap_options = 'condensed', full_width = F, position = 'left')
+```
+
+
+<div style="margin-bottom:100px;">
+
+```{r, out.width = "60%", fig.cap = " "}
+knitr::include_graphics("figures/sankey.png")
+```
+
+
+
+# Anger and Anxiety Combined
+
+#### Subgroup 1 Plot
+```{r, out.width = "60%", fig.cap = " "}
+knitr::include_graphics("figures/plots/subgroup_1_plot_ang_anx.png")
+```
+
+<div style="margin-bottom:100px;">
+
+#### Subgroup 2 Plot
+```{r, out.width = "60%", fig.cap = " "}
+knitr::include_graphics("figures/plots/subgroup_2_plot_ang_anx.png")
+```
+
+<div style="margin-bottom:100px;">
+
+#### Subgroup 3 Plot
+```{r, out.width = "60%", fig.cap = " "}
+knitr::include_graphics("figures/plots/subgroup_3_plot_ang_anx.png")
+```
+
+
+
+
+#### Table of frequencies for all subgroups
+
+```{r}
+dat <- read.csv("pcs_ang_anx_out/summaryFit.csv")
+
+allgrps <- table((dat$sub_membership))
+allgrps <- as.data.frame(allgrps)
+allgrps <- rename(allgrps, Group = Var1, Frequency = Freq)
+
+kable(allgrps)  %>%
+  kable_styling(bootstrap_options = 'condensed', full_width = F, position = 'left')
+```
+
+
+```{r}
+dat$Subject <- c('ME012_ANG', 'ME014_ANG', 'ME016_ANG', 'ME017_ANG', 'ME018_ANG', 'ME019_ANG', 'ME020_ANG', 'ME021_ANG', 'ME022_ANG', 'ME023_ANG', 'ME024_ANG', 'ME026_ANG', 'ME027_ANG', 'ME030_ANG', 'ME031_ANG', 'ME032_ANG', 'ME033_ANG', 'ME034_ANG', 'ME035_ANG', 'ME036_ANG', 'ME037_ANG', 'ME038_ANG', 'ME039_ANG', 'ME040_ANG', 'ME012_ANX', 'ME014_ANX', 'ME016_ANX', 'ME017_ANX', 'ME018_ANX', 'ME019_ANX', 'ME020_ANX', 'ME021_ANX', 'ME022_ANX', 'ME023_ANX', 'ME024_ANX', 'ME026_ANX', 'ME027_ANX', 'ME030_ANX', 'ME031_ANX', 'ME032_ANX', 'ME033_ANX', 'ME034_ANX', 'ME035_ANX', 'ME036_ANX', 'ME037_ANX', 'ME038_ANX', 'ME039_ANX', 'ME040_ANX')
+```
+
+<div style="margin-bottom:100px;">
+
+```{r}
+dat <- dat %>% mutate(State = case_when(
+  grepl("Anger", file) ~ "Anger",
+  grepl("Anxiety", file) ~ "Anxiety"))
+
+# filter out singletons by removing groups with only one member
+dat <- dat %>% group_by(sub_membership) %>% filter(n() != 1)
+```
+
+## Proportions of Anger and Anxiety data in each subgroup
+
+```{r}
+prop.table(table(dat$State, dat$sub_membership), 2) %>% round(digits = 3) %>% 
+  knitr::kable() %>% kable_styling(bootstrap_options = 'condensed', full_width = F, position = 'left')
+```
+
+
+>Visualize proportions of data by % Anger and % Anxiety in each subgroup
+
+```{r}
+prop.table(table(dat$State, dat$sub_membership), 2) %>% round(digits = 3) %>% reshape2::melt() %>%
+  ggplot(aes(x = as.factor(Var2), y = Var1, fill = value*100)) +
+  geom_tile() +
+  viridis::scale_fill_viridis(begin = .2, end = 1) +
+  geom_text(aes(label = paste0(round(value*100, digits = 2), "%"))) +
+  xlab("Subgroup Membership") + ylab("Emotion") + labs(fill = "Percentage") +
+  theme_bw() +
+  theme(legend.position = "right")
+ggsave("figure2.png", height = 3, width = 5, units = 'in')
+```
+
+<div style="margin-bottom:100px;">
+
+### Subgroup Robustness
+
+>Subjects 018, 019, 033, & 036 landed in the de facto anger subgroup (subgroup 1) and the de facto anxiety subgroup (subgroup 3)
+
+```{r}
+maingrps <- dat %>% select(Subject, State, sub_membership) %>%  
+                    filter(State == "Anger" & sub_membership == 1 | 
+                           State == "Anxiety" & sub_membership == 3)
+maingrps <- maingrps %>% select(-State)
+kable(maingrps)  %>%
+  kable_styling(bootstrap_options = 'condensed', full_width = F, position = 'left')
+```
+
+
+>Subjects 012 & 031 landed in subgroup 2 for both anger and anxiety
+
+```{r}
+grp2 <- dat %>% select(Subject, sub_membership) %>%  
+                    filter(sub_membership == 2)
+kable(grp2)  %>%
+  kable_styling(bootstrap_options = 'condensed', full_width = F, position = 'left')
+```
+
+
+<div style="margin-bottom:100px;">
+
+## Subgroup Comparisons
+
+
+```{r comment=NA}
+selfdat <- read_csv("behavioral_data/self_report_clean.csv")
+
+rdeesdat <- read_csv("behavioral_data/rdees_data.csv")
+#select columns containing scores
+rdeesdat <- select(rdeesdat, 1, 16:19)
+
+tasdat <- read_csv("behavioral_data/tas20_data.csv")
+#select columns containing scores
+tasdat <- select(tasdat, 1, 22:25)
+
+rdees_tas <- inner_join(rdeesdat, tasdat, by = 'Subject')
+```
+
+
+```{r comment = NA}
+#read in gimme output
+panganx <- read_csv("pcs_ang_anx_out/summaryFit.csv")
+#add ME subject IDs in the correct order based on the readme.txt file in 'important docs' folder
+panganx$Subject <- c('ME012_ANG', 'ME014_ANG', 'ME016_ANG', 'ME017_ANG', 'ME018_ANG', 'ME019_ANG', 'ME020_ANG', 'ME021_ANG', 'ME022_ANG', 'ME023_ANG', 'ME024_ANG', 'ME026_ANG', 'ME027_ANG', 'ME030_ANG', 'ME031_ANG', 'ME032_ANG', 'ME033_ANG', 'ME034_ANG', 'ME035_ANG', 'ME036_ANG', 'ME037_ANG', 'ME038_ANG', 'ME039_ANG', 'ME040_ANG', 'ME012_ANX', 'ME014_ANX', 'ME016_ANX', 'ME017_ANX', 'ME018_ANX', 'ME019_ANX', 'ME020_ANX', 'ME021_ANX', 'ME022_ANX', 'ME023_ANX', 'ME024_ANX', 'ME026_ANX', 'ME027_ANX', 'ME030_ANX', 'ME031_ANX', 'ME032_ANX', 'ME033_ANX', 'ME034_ANX', 'ME035_ANX', 'ME036_ANX', 'ME037_ANX', 'ME038_ANX', 'ME039_ANX', 'ME040_ANX')
+
+#read in VAS score data
+vasdat_all <- read_csv("behavioral_data/vas_scores.csv")
+#filter out everything but the Anger and Anxiety Runs
+target <- c('Anger', 'Anxiety')
+vasdat_anganx <- filter(vasdat_all, Run %in% target)
+
+
+#append _ANG or_ANX to Subject ID
+vasdat_anganx <- vasdat_anganx %>%
+  mutate(Subject = ifelse(Run == 'Anger', paste0(Subject, '_ANG'),
+                   ifelse(Run == 'Anxiety', paste0(Subject, '_ANX'), NA)))
+
+
+#convert VAS data to type numeric so we can work with them :)
+vasdat_anganx[,3:6] <- sapply(vasdat_anganx[,3:6], as.numeric)
+
+
+#compute Z scores to standardize responses for VAS data
+vasdat_anganx$Unpleasantness_z <- scale(vasdat_anganx$Unpleasantness, center = T, scale = F)
+vasdat_anganx$Activation_z <- scale(vasdat_anganx$Activation, center = T, scale = F)
+vasdat_anganx$Anxiety_z <- scale(vasdat_anganx$Anxiety, center = T, scale = F)
+vasdat_anganx$Anger_z <- scale(vasdat_anganx$Anger, center = T, scale = F)
+
+#the circumplex::ipsatize function below drops all other variables so I manually ipsatized the scores
+#####vasdat_anganx_ips <- ipsatize(vasdat_anganx, Unpleasantness:Anger)
+
+#compute mean of vas scores for each participant
+vasdat_means <- rowMeans(vasdat_anganx[,3:6])
+#ipsatize vas scores by subtracting subject's mean score from each rating
+vasdat_anganx$Unpleasantness_i <- vasdat_anganx$Unpleasantness - vasdat_means
+vasdat_anganx$Activation_i <- vasdat_anganx$Activation - vasdat_means
+vasdat_anganx$Anxiety_i <- vasdat_anganx$Anxiety - vasdat_means
+vasdat_anganx$Anger_i <- vasdat_anganx$Anger - vasdat_means
+
+#merge datasets based on subject ID
+panganx_vas <- left_join(panganx, vasdat_anganx, by = 'Subject')
+```
+
+```{r comment = NA}
+#select variables needed for group comparisons
+anganxdat <- panganx_vas %>% select(Subject, sub_membership, starts_with("Unpleasantness"), starts_with("Activation"), starts_with("Anxiety"), starts_with("Anger"))
+#separate columns so data can be joined with other behav measures
+anganxdat <- anganxdat %>% separate(Subject, "_", into = c('Subject', 'Run'))
+
+```
+
+```{r comment = NA}
+#remove unnecessary columns from other runs
+selfdat_filt <- selfdat %>% select(Subject, starts_with("AnxietyRun"), starts_with("AngerRun"), -ends_with("dummy"))
+
+#melt the dataframe so that we can merge with anganxdat_filt
+selfdat_filt_long <- selfdat_filt %>% 
+  reshape2::melt(id.vars = "Subject") %>%
+  separate(variable, "_", into = c("run", "Emotion")) %>%
+  mutate(Run = ifelse(str_detect(run, "Anxiety"), "ANX", "ANG")) %>%
+  select(-run) %>%
+  spread(key = "Emotion", value = "value")
+
+```
+
+```{r comment = NA}
+#join dataframes. left join is used so that we dont lose the four subjects for which there is no self-report data
+anganx_vas_self <- left_join(anganxdat, selfdat_filt_long)
+```
+
+#### VAS Scores
+
+```{r comment=NA}
+anganx_filt <- anganx_vas_self %>% filter(sub_membership <= 3)
+anganx_filt$sub_membership <- as.factor(anganx_filt$sub_membership)
+
+# Compute the analysis of variance
+unpl.aov <- aov(Unpleasantness ~ sub_membership, data = anganx_filt)
+# Summary of the analysis
+summary(unpl.aov)
+
+act.aov <- aov(Activation ~ sub_membership, data = anganx_filt)
+summary(act.aov)
+
+anx.aov <- aov(Anxiety ~ sub_membership, data = anganx_filt)
+summary(anx.aov)
+
+ang.aov <- aov(Anger ~ sub_membership, data = anganx_filt)
+summary(ang.aov)
+
+```
+
+
+<div style="margin-bottom:100px;">
+
+#### Self-Report Data
+
+```{r comment=NA}
+aro.aov <- aov(arousal ~ sub_membership, data = anganx_filt)
+summary(aro.aov)
+
+bod.aov <- aov(body ~ sub_membership, data = anganx_filt)
+summary(bod.aov)
+
+emo.aov <- aov(emotion ~ sub_membership, data = anganx_filt)
+summary(emo.aov)
+
+iex.aov <- aov(internalexternal ~ sub_membership, data = anganx_filt)
+summary(iex.aov)
+
+mim.aov <- aov(memoryimagine ~ sub_membership, data = anganx_filt)
+summary(mim.aov)
+
+soc.aov <- aov(social ~ sub_membership, data = anganx_filt)
+summary(soc.aov)
+
+val.aov <- aov(valence ~ sub_membership, data = anganx_filt)
+summary(val.aov)
+```
+
+><span style="color:darkcyan">The only marginally significant ANOVA is for the Social measure from the self-report data. The largest difference is between Subgroups 1 and 2.</span>
+
+
+```{r comment=NA}
+TukeyHSD(soc.aov)
+
+anganx_filt %>%
+    group_by(sub_membership) %>%
+    dplyr::summarize(Mean = mean(social, na.rm=TRUE))
+
+```
+
+
+
+```{r}
+#write csv for linear contrast analysis in SPSS
+#write.csv(anganx_filt, "anganx_filt.csv", row.names = F)
+```
+
+
+## De facto Anger & Anxiety Subgroup Comparisons
+
+
+```{r}
+#remove subgroup 2 (the mix of anger and anxiety) to compare de facto anger and anxiety subgroups
+anganx_no2 <- anganx_filt %>% filter(sub_membership != 2)
+anganx_no2$sub_membership <- as.character(anganx_no2$sub_membership)
+```
+
+
+<div style="margin-bottom:100px;">
+
+### VAS Scores
+
+```{r comment=NA}
+
+pander(t.test(anganx_no2$Unpleasantness ~ anganx_no2$sub_membership))
+      cohensD(anganx_no2$Unpleasantness ~ anganx_no2$sub_membership)
+      
+pander(t.test(anganx_no2$Activation ~ anganx_no2$sub_membership))
+      cohensD(anganx_no2$Activation ~ anganx_no2$sub_membership)
+      
+pander(t.test(anganx_no2$Anxiety ~ anganx_no2$sub_membership))
+      cohensD(anganx_no2$Anxiety ~ anganx_no2$sub_membership)
+      
+pander(t.test(anganx_no2$Anger ~ anganx_no2$sub_membership))
+      cohensD(anganx_no2$Anger ~ anganx_no2$sub_membership)
+ 
+```
+
+### Self-Report Measures
+
+```{r comment = NA}
+pander(t.test(anganx_no2$arousal ~ anganx_no2$sub_membership))
+      cohensD(anganx_no2$arousal ~ anganx_no2$sub_membership)
+      
+pander(t.test(anganx_no2$body ~ anganx_no2$sub_membership))
+      cohensD(anganx_no2$body ~ anganx_no2$sub_membership)
+
+pander(t.test(anganx_no2$emotion ~ anganx_no2$sub_membership))
+      cohensD(anganx_no2$emotion ~ anganx_no2$sub_membership)
+
+pander(t.test(anganx_no2$internalexternal ~ anganx_no2$sub_membership))
+      cohensD(anganx_no2$internalexternal ~ anganx_no2$sub_membership)
+    
+pander(t.test(anganx_no2$memoryimagine ~ anganx_no2$sub_membership))
+      cohensD(anganx_no2$memoryimagine ~ anganx_no2$sub_membership)
+      
+pander(t.test(anganx_no2$social ~ anganx_no2$sub_membership))
+      cohensD(anganx_no2$social ~ anganx_no2$sub_membership)
+      
+pander(t.test(anganx_no2$valence ~ anganx_no2$sub_membership))
+      cohensD(anganx_no2$valence ~ anganx_no2$sub_membership)
+
+```
+
+## Comparing ratings of emotion based on assigned run within de facto subgroups
+
+```{r}
+defacto_ang <- anganx_filt %>% filter(sub_membership == 1)
+defacto_mix <- anganx_filt %>% filter(sub_membership == 2)
+defacto_anx <- anganx_filt %>% filter(sub_membership == 3)
+```
+
+### VAS Anger and Anxiety Scores
+
+```{r comment = NA}
+
+
+pander(t.test(defacto_ang$Anxiety ~ defacto_ang$Run))
+      cohensD(defacto_ang$Anxiety ~ defacto_ang$Run)
+      
+pander(t.test(defacto_ang$Anger ~ defacto_ang$Run))
+      cohensD(defacto_ang$Anger ~ defacto_ang$Run)
+     
+       
+      
+      
+pander(t.test(defacto_mix$Anxiety ~ defacto_mix$Run))
+      cohensD(defacto_mix$Anxiety ~ defacto_mix$Run)
+      
+pander(t.test(defacto_mix$Anger ~ defacto_mix$Run))
+      cohensD(defacto_mix$Anger ~ defacto_mix$Run)  
+      
+      
+      
+      
+pander(t.test(defacto_anx$Anxiety ~ defacto_anx$Run))
+      cohensD(defacto_anx$Anxiety ~ defacto_anx$Run)
+      
+pander(t.test(defacto_anx$Anger ~ defacto_anx$Run))
+      cohensD(defacto_anx$Anger ~ defacto_anx$Run)
+      
+```
